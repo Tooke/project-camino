@@ -1,32 +1,33 @@
-# Ignore OS and editor files
+# Exclude all plugins...
+wp-content/plugins/*
+
+# ...but keep the custom Project Camino plugin
+!wp-content/plugins/project-camino/
+
+# Common exclusions
 .DS_Store
 Thumbs.db
 *.log
 
-# Ignore IDE settings
 .vscode/
 .idea/
 
-# Ignore node/npm artifacts (if using)
 node_modules/
 npm-debug.log
 yarn.lock
 
-# Ignore WordPress core & config files not meant for Git
 wp-config.php
 wp-content/debug.log
 
-# Ignore database dumps
 *.sql
 *.sql.gz
 
-# Ignore DevKinsta and Docker-specific stuff
 .devkinsta/
 docker-compose.yml
 *.env
 
-# Ignore uploads/media (optional — useful if syncing separately)
+# Optionally ignore uploads to keep repo size small
 wp-content/uploads/
 
-# Ignore the deploy script (if created for SSH automation)
+# Ignore deploy scripts
 deploy.sh
