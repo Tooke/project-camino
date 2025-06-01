@@ -1,33 +1,34 @@
-# Exclude all plugins...
-wp-content/plugins/*
-
-# ...but keep the custom Project Camino plugin
-!wp-content/plugins/project-camino/
-
-# Common exclusions
-.DS_Store
-Thumbs.db
+# Ignore system and environment files
 *.log
-
+*.sql
+*.env
+.DS_Store
 .vscode/
 .idea/
 
-node_modules/
-npm-debug.log
-yarn.lock
+# Ignore deploy script (local only)
+deploy-to-kinsta.sh
 
-wp-config.php
-wp-content/debug.log
+# Ignore WordPress core
+wp-admin/
+wp-includes/
+license.txt
+readme.html
+wp-*.php
+xmlrpc.php
+index.php
 
-*.sql
-*.sql.gz
+# Track only your custom plugin (ignore all others)
+wp-content/plugins/*
+!wp-content/plugins/project-camino/
 
-.devkinsta/
-docker-compose.yml
-*.env
+# Track only your custom theme (ignore all others)
+wp-content/themes/*
+!wp-content/themes/twentytwentyfive/
 
-# Optionally ignore uploads to keep repo size small
-wp-content/uploads/
+# Optional: Ignore uploads if you don't want media in Git
+# wp-content/uploads/
 
-# Ignore deploy scripts
-deploy.sh
+# Ignore archive files and backups
+*.gz
+*.zip
