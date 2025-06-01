@@ -1,7 +1,32 @@
-wp-config.php
-wp-content/uploads/
-wp-content/cache/
-wp-content/backups/
+# Ignore OS and editor files
+.DS_Store
+Thumbs.db
 *.log
+
+# Ignore IDE settings
+.vscode/
+.idea/
+
+# Ignore node/npm artifacts (if using)
+node_modules/
+npm-debug.log
+yarn.lock
+
+# Ignore WordPress core & config files not meant for Git
+wp-config.php
+wp-content/debug.log
+
+# Ignore database dumps
 *.sql
-.env
+*.sql.gz
+
+# Ignore DevKinsta and Docker-specific stuff
+.devkinsta/
+docker-compose.yml
+*.env
+
+# Ignore uploads/media (optional — useful if syncing separately)
+wp-content/uploads/
+
+# Ignore the deploy script (if created for SSH automation)
+deploy.sh
