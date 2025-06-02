@@ -2,12 +2,13 @@
 /*
 Plugin Name: Three-Day Weekend Manager
 Description: Manage board roles, assignments, and weekend settings for three-day communities.
-Version: 1.0
+Version: 1.1
 Author: Allen Heishman
 */
 
 if (!defined('ABSPATH')) exit;
 
+// Plugin activation: create required tables
 register_activation_hook(__FILE__, 'tdwm_install');
 function tdwm_install() {
     global $wpdb;
@@ -33,11 +34,27 @@ function tdwm_install() {
     ) $charset_collate;");
 }
 
-add_action('admin_menu', function() {
-    add_menu_page('Administration', 'Administration', 'manage_options', 'tdwm_admin', 'tdwm_admin_page');
-    add_menu_page('Board Admin', 'Board Admin', 'manage_options', 'tdwm_board_admin', 'tdwm_board_admin_page');
+// Redirect main menu to first submenu
+add_action('admin_init', function() {
+    if (is_admin() && isset($_GET['page']) && $_GET['page'] === 'tdwm_placeholder') {
+        wp_redirect(admin_url('admin.php?page=tdwm_admin'));
+        exit;
+    }
 });
 
+// Admin menu setup
+add_action('admin_menu', function() {
+    add_menu_page('3-Day Manager', '3-Day Manager', 'manage_options', 'tdwm_placeholder', '__return_null', 'dashicons-calendar-alt', 3);
+    add_submenu_page('tdwm_placeholder', 'Administration', 'Administration', 'manage_options', 'tdwm_admin', 'tdwm_admin_page');
+    add_submenu_page('tdwm_placeholder', 'Board Admin', 'Board Admin', 'manage_options', 'tdwm_board_admin', 'tdwm_board_admin_page');
+
+    // Remove the duplicate submenu created by WP
+    remove_submenu_page('tdwm_placeholder', 'tdwm_placeholder');
+}, 99);
+
+
+
+// Admin: Add/Delete board roles
 function tdwm_admin_page() {
     if (!is_super_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.'));
@@ -89,6 +106,7 @@ function tdwm_admin_page() {
     echo '</div>';
 }
 
+// Admin: Assign board roles
 function tdwm_board_admin_page() {
     global $wpdb;
     $assignments_table = $wpdb->prefix . 'tdwm_board_assignments';
@@ -156,11 +174,15 @@ function tdwm_board_admin_page() {
         </form>';
 
     echo '<h2>Current Board Members</h2>';
-
     echo '<table class="wp-list-table widefat fixed striped">
             <thead><tr><th>Role</th><th>Name</th><th>Gender</th><th>Start Date</th><th>Action</th></tr></thead><tbody>';
+
     foreach ($roles as $role) {
-        $assigned = $wpdb->get_results($wpdb->prepare("SELECT a.id, u.display_name, a.gender, a.start_date FROM $assignments_table a JOIN {$wpdb->users} u ON a.user_id = u.ID WHERE a.role_name = %s AND a.end_date IS NULL", $role));
+        $assigned = $wpdb->get_results($wpdb->prepare(
+            "SELECT a.id, u.display_name, a.gender, a.start_date 
+             FROM $assignments_table a 
+             JOIN {$wpdb->users} u ON a.user_id = u.ID 
+             WHERE a.role_name = %s AND a.end_date IS NULL", $role));
 
         if ($assigned) {
             foreach ($assigned as $entry) {
@@ -170,5 +192,6 @@ function tdwm_board_admin_page() {
             echo '<tr><td>' . esc_html($role) . '</td><td colspan="4"><strong>Open Position</strong></td></tr>';
         }
     }
+
     echo '</tbody></table></div>';
 }
