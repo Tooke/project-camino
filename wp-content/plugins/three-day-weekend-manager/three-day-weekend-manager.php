@@ -32,6 +32,17 @@ function tdwm_install() {
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         role_name VARCHAR(255) NOT NULL UNIQUE
     ) $charset_collate;");
+
+    // Automatically create public board members page
+    if (!get_page_by_path('board-members')) {
+        wp_insert_post([
+            'post_title'    => 'Board Members',
+            'post_name'     => 'board-members',
+            'post_content'  => '[tdwm_board_members]',
+            'post_status'   => 'publish',
+            'post_type'     => 'page',
+        ]);
+    }
 }
 
 // Redirect main menu to first submenu
@@ -104,6 +115,48 @@ function tdwm_admin_page() {
         echo '<p>No roles found. Add your first role above.</p>';
     }
     echo '</div>';
+}
+
+add_shortcode('tdwm_board_members', 'tdwm_display_public_board_members');
+
+function tdwm_display_public_board_members() {
+    global $wpdb;
+    $roles_table = $wpdb->prefix . 'tdwm_board_roles';
+    $assignments_table = $wpdb->prefix . 'tdwm_board_assignments';
+
+    $roles = $wpdb->get_col("SELECT role_name FROM $roles_table ORDER BY role_name ASC");
+
+    $output = '<div class="tdwm-board-members">';
+    $output .= '<table class="wp-list-table widefat fixed striped">';
+    #$output .= '<thead><tr><th>Position</th><th>Name</th><th>Date Assigned</th></tr></thead><tbody>';
+
+    foreach ($roles as $role) {
+        $assignment = $wpdb->get_row($wpdb->prepare(
+            "SELECT u.ID, a.start_date
+             FROM $assignments_table a
+             JOIN {$wpdb->users} u ON a.user_id = u.ID
+             WHERE a.role_name = %s AND a.end_date IS NULL
+             ORDER BY a.start_date DESC LIMIT 1", $role));
+
+        if ($assignment) {
+            $first = get_user_meta($assignment->ID, 'first_name', true);
+            $last = get_user_meta($assignment->ID, 'last_name', true);
+            $name = trim("$first $last") ?: get_userdata($assignment->ID)->display_name;
+            $date = esc_html(date('F j, Y', strtotime($assignment->start_date)));
+        } else {
+            $name = 'Open Position';
+            $date = '—';
+        }
+
+        $output .= '<tr>';
+        $output .= '<td style="padding-right: 40px;">' . esc_html($role) . '</td>';
+        $output .= '<td>' . esc_html($name) . '</td>';
+        #$output .= '<td>' . $date . '</td>';
+        $output .= '</tr>';
+    }
+
+    $output .= '</tbody></table></div>';
+    return $output;
 }
 
 // Admin: Assign board roles
