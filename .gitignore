@@ -20,7 +20,7 @@ index.php
 
 # Track only your custom plugin (ignore all others)
 wp-content/plugins/*
-!wp-content/plugins/project-camino/
+!wp-content/plugins/three-day-weekend-manager/
 
 # Track only your custom theme (ignore all others)
 wp-content/themes/*
