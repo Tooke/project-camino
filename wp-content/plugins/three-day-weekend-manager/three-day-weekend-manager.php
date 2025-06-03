@@ -30,10 +30,10 @@ function tdwm_install() {
 
     dbDelta("CREATE TABLE $roles_table (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        role_name VARCHAR(255) NOT NULL UNIQUE
+        role_name VARCHAR(255) NOT NULL UNIQUE,
+        sort_order INT DEFAULT 0
     ) $charset_collate;");
 
-    // Automatically create public board members page
     if (!get_page_by_path('board-members')) {
         wp_insert_post([
             'post_title'    => 'Board Members',
@@ -45,7 +45,6 @@ function tdwm_install() {
     }
 }
 
-// Redirect main menu to first submenu
 add_action('admin_init', function() {
     if (is_admin() && isset($_GET['page']) && $_GET['page'] === 'tdwm_placeholder') {
         wp_redirect(admin_url('admin.php?page=tdwm_admin'));
@@ -53,19 +52,13 @@ add_action('admin_init', function() {
     }
 });
 
-// Admin menu setup
 add_action('admin_menu', function() {
     add_menu_page('3-Day Manager', '3-Day Manager', 'manage_options', 'tdwm_placeholder', '__return_null', 'dashicons-calendar-alt', 3);
     add_submenu_page('tdwm_placeholder', 'Administration', 'Administration', 'manage_options', 'tdwm_admin', 'tdwm_admin_page');
     add_submenu_page('tdwm_placeholder', 'Board Admin', 'Board Admin', 'manage_options', 'tdwm_board_admin', 'tdwm_board_admin_page');
-
-    // Remove the duplicate submenu created by WP
     remove_submenu_page('tdwm_placeholder', 'tdwm_placeholder');
 }, 99);
 
-
-
-// Admin: Add/Delete board roles
 function tdwm_admin_page() {
     if (!is_super_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.'));
@@ -75,6 +68,15 @@ function tdwm_admin_page() {
     $table = $wpdb->prefix . 'tdwm_board_roles';
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (isset($_POST['update_order']) && is_array($_POST['sort_order'])) {
+            foreach ($_POST['sort_order'] as $role_id => $order) {
+                if (isset($order) && is_numeric($order)) {
+                    $wpdb->update($table, ['sort_order' => intval($order)], ['id' => intval($role_id)]);
+                }
+            }
+            echo '<div class="updated"><p>Sort order updated.</p></div>';
+        }
+
         if (!empty($_POST['new_role'])) {
             $new_role = sanitize_text_field($_POST['new_role']);
             $exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table WHERE role_name = %s", $new_role));
@@ -91,7 +93,7 @@ function tdwm_admin_page() {
         }
     }
 
-    $roles = $wpdb->get_col("SELECT role_name FROM $table ORDER BY role_name ASC");
+    $roles = $wpdb->get_results("SELECT id, role_name, sort_order FROM $table ORDER BY sort_order ASC, role_name ASC");
 
     echo '<div class="wrap"><h1>Board Role Administration</h1>';
     echo '<h2>Add New Board Role</h2>
@@ -102,15 +104,21 @@ function tdwm_admin_page() {
 
     echo '<h2>Existing Roles</h2>';
     if (!empty($roles)) {
-        echo '<ul>';
+        echo '<form method="post"><table class="widefat"><thead><tr><th>Role</th><th>Order</th><th>Actions</th></tr></thead><tbody>';
         foreach ($roles as $role) {
-            echo '<li>' . esc_html($role) . '
-                <form method="post" style="display:inline">
-                    <input type="hidden" name="delete_role" value="' . esc_attr($role) . '">
-                    <input type="submit" class="button-link-delete" value="Remove" onclick="return confirm(\'Are you sure?\');">
-                </form></li>';
+            echo '<tr><td>' . esc_html($role->role_name) . '</td>';
+            echo '<td><input type="number" name="sort_order[' . esc_attr($role->id) . ']" value="' . esc_attr($role->sort_order) . '" style="width: 60px;"></td>';
+            echo '<td>
+    <button type="submit" formaction="' . esc_url(admin_url('admin.php?page=tdwm_admin')) . '" 
+            formmethod="post" name="delete_role" 
+            value="' . esc_attr($role->role_name) . '" 
+            class="button-link-delete" 
+            onclick="return confirm(\'Are you sure you want to delete this role?\');">
+        Remove
+    </button>
+</td></tr>';
         }
-        echo '</ul>';
+        echo '</tbody></table><p><input type="submit" name="update_order" class="button button-secondary" value="Update Order"></p></form>';
     } else {
         echo '<p>No roles found. Add your first role above.</p>';
     }
@@ -118,19 +126,20 @@ function tdwm_admin_page() {
 }
 
 add_shortcode('tdwm_board_members', 'tdwm_display_public_board_members');
-
 function tdwm_display_public_board_members() {
     global $wpdb;
     $roles_table = $wpdb->prefix . 'tdwm_board_roles';
     $assignments_table = $wpdb->prefix . 'tdwm_board_assignments';
 
-    $roles = $wpdb->get_col("SELECT role_name FROM $roles_table ORDER BY role_name ASC");
+    $roles = $wpdb->get_results("SELECT role_name FROM $roles_table ORDER BY sort_order ASC, role_name ASC");
 
     $output = '<div class="tdwm-board-members">';
     $output .= '<table class="wp-list-table widefat fixed striped">';
-    #$output .= '<thead><tr><th>Position</th><th>Name</th><th>Date Assigned</th></tr></thead><tbody>';
+    $output .= '<tbody>';
 
-    foreach ($roles as $role) {
+    foreach ($roles as $role_obj) {
+        $role = $role_obj->role_name;
+
         $assignment = $wpdb->get_row($wpdb->prepare(
             "SELECT u.ID, a.start_date
              FROM $assignments_table a
@@ -142,16 +151,14 @@ function tdwm_display_public_board_members() {
             $first = get_user_meta($assignment->ID, 'first_name', true);
             $last = get_user_meta($assignment->ID, 'last_name', true);
             $name = trim("$first $last") ?: get_userdata($assignment->ID)->display_name;
-            $date = esc_html(date('F j, Y', strtotime($assignment->start_date)));
         } else {
             $name = 'Open Position';
-            $date = '—';
         }
 
         $output .= '<tr>';
-        $output .= '<td style="padding-right: 40px;">' . esc_html($role) . '</td>';
+        $output .= '<td>' . esc_html($role) . '</td>';
+        $output .= '<td style="width: 40px;"></td>';
         $output .= '<td>' . esc_html($name) . '</td>';
-        #$output .= '<td>' . $date . '</td>';
         $output .= '</tr>';
     }
 
@@ -159,7 +166,6 @@ function tdwm_display_public_board_members() {
     return $output;
 }
 
-// Admin: Assign board roles
 function tdwm_board_admin_page() {
     global $wpdb;
     $assignments_table = $wpdb->prefix . 'tdwm_board_assignments';
@@ -175,12 +181,7 @@ function tdwm_board_admin_page() {
         if ($conflict) {
             echo '<div class="error"><p>This user is already assigned to an active board role.</p></div>';
         } else {
-            if (strtolower($role_name) === 'spiritual director') {
-                $role_conflict = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments_table WHERE role_name = %s AND gender = %s AND end_date IS NULL", $role_name, $gender));
-            } else {
-                $role_conflict = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments_table WHERE role_name = %s AND end_date IS NULL", $role_name));
-            }
-
+            $role_conflict = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments_table WHERE role_name = %s AND end_date IS NULL", $role_name));
             if ($role_conflict) {
                 echo '<div class="error"><p>This role is already filled.</p></div>';
             } else {
@@ -202,7 +203,7 @@ function tdwm_board_admin_page() {
         echo '<div class="updated"><p>Role unassigned.</p></div>';
     }
 
-    $roles = $wpdb->get_col("SELECT role_name FROM $roles_table ORDER BY role_name ASC");
+    $roles = $wpdb->get_results("SELECT role_name FROM $roles_table ORDER BY sort_order ASC, role_name ASC");
     $users = get_users(['fields' => ['ID', 'display_name']]);
 
     echo '<div class="wrap"><h1>Assign Board Role</h1>
@@ -213,8 +214,8 @@ function tdwm_board_admin_page() {
     }
     echo '</select>
             <select name="role_name" required><option value="">Select Role</option>';
-    foreach ($roles as $role) {
-        echo '<option value="' . esc_attr($role) . '">' . esc_html($role) . '</option>';
+    foreach ($roles as $role_obj) {
+        echo '<option value="' . esc_attr($role_obj->role_name) . '">' . esc_html($role_obj->role_name) . '</option>';
     }
     echo '</select>
             <select name="gender">
@@ -230,7 +231,9 @@ function tdwm_board_admin_page() {
     echo '<table class="wp-list-table widefat fixed striped">
             <thead><tr><th>Role</th><th>Name</th><th>Gender</th><th>Start Date</th><th>Action</th></tr></thead><tbody>';
 
-    foreach ($roles as $role) {
+    foreach ($roles as $role_obj) {
+        $role = $role_obj->role_name;
+
         $assigned = $wpdb->get_results($wpdb->prepare(
             "SELECT a.id, u.display_name, a.gender, a.start_date 
              FROM $assignments_table a 
