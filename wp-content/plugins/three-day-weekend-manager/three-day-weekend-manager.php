@@ -2,7 +2,7 @@
 /*
 Plugin Name: Three-Day Weekend Manager
 Description: Manage board roles, assignments, and weekend settings for three-day communities.
-Version: 1.1
+Version: 1.2
 Author: Allen Heishman
 */
 
@@ -47,31 +47,31 @@ function tdwm_install() {
 
 add_action('admin_init', function() {
     if (is_admin() && isset($_GET['page']) && $_GET['page'] === 'tdwm_placeholder') {
-        wp_redirect(admin_url('admin.php?page=tdwm_admin'));
+        wp_redirect(admin_url('admin.php?page=tdwm_roles_admin'));
         exit;
     }
 });
 
 add_action('admin_menu', function() {
     add_menu_page('3-Day Manager', '3-Day Manager', 'manage_options', 'tdwm_placeholder', '__return_null', 'dashicons-calendar-alt', 3);
-    add_submenu_page('tdwm_placeholder', 'Administration', 'Administration', 'manage_options', 'tdwm_admin', 'tdwm_admin_page');
-    add_submenu_page('tdwm_placeholder', 'Board Admin', 'Board Admin', 'manage_options', 'tdwm_board_admin', 'tdwm_board_admin_page');
+    add_submenu_page('tdwm_placeholder', 'Board Roles', 'Board Roles', 'manage_options', 'tdwm_roles_admin', 'tdwm_combined_board_roles_page');
     remove_submenu_page('tdwm_placeholder', 'tdwm_placeholder');
 }, 99);
 
-function tdwm_admin_page() {
+function tdwm_combined_board_roles_page() {
     if (!is_super_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.'));
     }
 
     global $wpdb;
-    $table = $wpdb->prefix . 'tdwm_board_roles';
+    $roles_table = $wpdb->prefix . 'tdwm_board_roles';
+    $assignments_table = $wpdb->prefix . 'tdwm_board_assignments';
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_POST['update_order']) && is_array($_POST['sort_order'])) {
             foreach ($_POST['sort_order'] as $role_id => $order) {
                 if (isset($order) && is_numeric($order)) {
-                    $wpdb->update($table, ['sort_order' => intval($order)], ['id' => intval($role_id)]);
+                    $wpdb->update($roles_table, ['sort_order' => intval($order)], ['id' => intval($role_id)]);
                 }
             }
             echo '<div class="updated"><p>Sort order updated.</p></div>';
@@ -79,23 +79,64 @@ function tdwm_admin_page() {
 
         if (!empty($_POST['new_role'])) {
             $new_role = sanitize_text_field($_POST['new_role']);
-            $exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table WHERE role_name = %s", $new_role));
+            $exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $roles_table WHERE role_name = %s", $new_role));
             if (!$exists) {
-                $wpdb->insert($table, ['role_name' => $new_role]);
+                $wpdb->insert($roles_table, ['role_name' => $new_role]);
                 echo '<div class="updated"><p>Role added successfully.</p></div>';
             } else {
                 echo '<div class="error"><p>Role already exists.</p></div>';
             }
-        } elseif (!empty($_POST['delete_role'])) {
+        }
+
+        if (!empty($_POST['delete_role'])) {
             $delete_role = sanitize_text_field($_POST['delete_role']);
-            $wpdb->delete($table, ['role_name' => $delete_role]);
+            $wpdb->delete($roles_table, ['role_name' => $delete_role]);
             echo '<div class="updated"><p>Role removed.</p></div>';
+        }
+
+        if (!empty($_POST['user_id']) && !empty($_POST['role_name'])) {
+            $user_id = intval($_POST['user_id']);
+            $role_name = sanitize_text_field($_POST['role_name']);
+            $gender = sanitize_text_field($_POST['gender']);
+            $start_date = sanitize_text_field($_POST['start_date']);
+
+            $conflict = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments_table WHERE user_id = %d AND end_date IS NULL", $user_id));
+            if ($conflict) {
+                echo '<div class="error"><p>This user is already assigned to an active board role.</p></div>';
+            } else {
+                if (strtolower($role_name) === 'spiritual director') {
+                    $role_conflict = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments_table WHERE role_name = %s AND gender = %s AND end_date IS NULL", $role_name, $gender));
+                } else {
+                    $role_conflict = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments_table WHERE role_name = %s AND end_date IS NULL", $role_name));
+                }
+
+                if ($role_conflict) {
+                    echo '<div class="error"><p>This role is already filled.</p></div>';
+                } else {
+                    $wpdb->insert($assignments_table, [
+                        'user_id' => $user_id,
+                        'role_name' => $role_name,
+                        'gender' => $gender,
+                        'start_date' => $start_date,
+                        'end_date' => null
+                    ]);
+                    echo '<div class="updated"><p>Assignment saved.</p></div>';
+                }
+            }
         }
     }
 
-    $roles = $wpdb->get_results("SELECT id, role_name, sort_order FROM $table ORDER BY sort_order ASC, role_name ASC");
+    if (!empty($_GET['remove'])) {
+        $remove_id = intval($_GET['remove']);
+        $wpdb->update($assignments_table, ['end_date' => current_time('mysql')], ['id' => $remove_id]);
+        echo '<div class="updated"><p>Role unassigned.</p></div>';
+    }
 
-    echo '<div class="wrap"><h1>Board Role Administration</h1>';
+    $roles = $wpdb->get_results("SELECT id, role_name, sort_order FROM $roles_table ORDER BY sort_order ASC, role_name ASC");
+    $users = get_users(['fields' => ['ID', 'display_name']]);
+
+    echo '<div class="wrap"><h1>Board Role Management</h1>';
+
     echo '<h2>Add New Board Role</h2>
         <form method="post">
             <input type="text" name="new_role" required>
@@ -108,21 +149,55 @@ function tdwm_admin_page() {
         foreach ($roles as $role) {
             echo '<tr><td>' . esc_html($role->role_name) . '</td>';
             echo '<td><input type="number" name="sort_order[' . esc_attr($role->id) . ']" value="' . esc_attr($role->sort_order) . '" style="width: 60px;"></td>';
-            echo '<td>
-    <button type="submit" formaction="' . esc_url(admin_url('admin.php?page=tdwm_admin')) . '" 
-            formmethod="post" name="delete_role" 
-            value="' . esc_attr($role->role_name) . '" 
-            class="button-link-delete" 
-            onclick="return confirm(\'Are you sure you want to delete this role?\');">
-        Remove
-    </button>
-</td></tr>';
+            echo '<td><button type="submit" name="delete_role" value="' . esc_attr($role->role_name) . '" class="button-link-delete" onclick="return confirm(\'Are you sure you want to delete this role?\');">Remove</button></td></tr>';
         }
         echo '</tbody></table><p><input type="submit" name="update_order" class="button button-secondary" value="Update Order"></p></form>';
     } else {
         echo '<p>No roles found. Add your first role above.</p>';
     }
-    echo '</div>';
+
+    echo '<h2>Assign Board Role</h2>
+        <form method="post">
+            <select name="user_id" required><option value="">Select User</option>';
+    foreach ($users as $user) {
+        echo '<option value="' . esc_attr($user->ID) . '">' . esc_html($user->display_name) . '</option>';
+    }
+    echo '</select>
+            <select name="role_name" required><option value="">Select Role</option>';
+    foreach ($roles as $role) {
+        echo '<option value="' . esc_attr($role->role_name) . '">' . esc_html($role->role_name) . '</option>';
+    }
+    echo '</select>
+            <select name="gender">
+                <option value="">Select Gender</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+            </select>
+            <input type="date" name="start_date" value="' . esc_attr(date('Y-m-d')) . '" required>
+            <input type="submit" class="button button-primary" value="Assign">
+        </form>';
+
+    echo '<h2>Current Board Members</h2>';
+    echo '<table class="wp-list-table widefat fixed striped">
+            <thead><tr><th>Role</th><th>Name</th><th>Gender</th><th>Start Date</th><th>Action</th></tr></thead><tbody>';
+
+    foreach ($roles as $role) {
+        $assigned = $wpdb->get_results($wpdb->prepare(
+            "SELECT a.id, u.display_name, a.gender, a.start_date 
+             FROM $assignments_table a 
+             JOIN {$wpdb->users} u ON a.user_id = u.ID 
+             WHERE a.role_name = %s AND a.end_date IS NULL", $role->role_name));
+
+        if (!empty($assigned)) {
+            foreach ($assigned as $entry) {
+                echo '<tr><td>' . esc_html($role->role_name) . '</td><td>' . esc_html($entry->display_name) . '</td><td>' . esc_html($entry->gender) . '</td><td>' . esc_html($entry->start_date) . '</td><td><a href="?page=tdwm_roles_admin&remove=' . esc_attr($entry->id) . '" onclick="return confirm(\'Remove this assignment?\');">Remove</a></td></tr>';
+            }
+        } else {
+            echo '<tr><td>' . esc_html($role->role_name) . '</td><td colspan="4"><strong>Open Position</strong></td></tr>';
+        }
+    }
+
+    echo '</tbody></table></div>';
 }
 
 add_shortcode('tdwm_board_members', 'tdwm_display_public_board_members');
@@ -164,90 +239,4 @@ function tdwm_display_public_board_members() {
 
     $output .= '</tbody></table></div>';
     return $output;
-}
-
-function tdwm_board_admin_page() {
-    global $wpdb;
-    $assignments_table = $wpdb->prefix . 'tdwm_board_assignments';
-    $roles_table = $wpdb->prefix . 'tdwm_board_roles';
-
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && current_user_can('manage_options')) {
-        $user_id = intval($_POST['user_id']);
-        $role_name = sanitize_text_field($_POST['role_name']);
-        $gender = sanitize_text_field($_POST['gender']);
-        $start_date = sanitize_text_field($_POST['start_date']);
-
-        $conflict = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments_table WHERE user_id = %d AND end_date IS NULL", $user_id));
-        if ($conflict) {
-            echo '<div class="error"><p>This user is already assigned to an active board role.</p></div>';
-        } else {
-            $role_conflict = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments_table WHERE role_name = %s AND end_date IS NULL", $role_name));
-            if ($role_conflict) {
-                echo '<div class="error"><p>This role is already filled.</p></div>';
-            } else {
-                $wpdb->insert($assignments_table, [
-                    'user_id' => $user_id,
-                    'role_name' => $role_name,
-                    'gender' => $gender,
-                    'start_date' => $start_date,
-                    'end_date' => null
-                ]);
-                echo '<div class="updated"><p>Assignment saved.</p></div>';
-            }
-        }
-    }
-
-    if (!empty($_GET['remove']) && current_user_can('manage_options')) {
-        $remove_id = intval($_GET['remove']);
-        $wpdb->update($assignments_table, ['end_date' => current_time('mysql')], ['id' => $remove_id]);
-        echo '<div class="updated"><p>Role unassigned.</p></div>';
-    }
-
-    $roles = $wpdb->get_results("SELECT role_name FROM $roles_table ORDER BY sort_order ASC, role_name ASC");
-    $users = get_users(['fields' => ['ID', 'display_name']]);
-
-    echo '<div class="wrap"><h1>Assign Board Role</h1>
-        <form method="post">
-            <select name="user_id" required><option value="">Select User</option>';
-    foreach ($users as $user) {
-        echo '<option value="' . esc_attr($user->ID) . '">' . esc_html($user->display_name) . '</option>';
-    }
-    echo '</select>
-            <select name="role_name" required><option value="">Select Role</option>';
-    foreach ($roles as $role_obj) {
-        echo '<option value="' . esc_attr($role_obj->role_name) . '">' . esc_html($role_obj->role_name) . '</option>';
-    }
-    echo '</select>
-            <select name="gender">
-                <option value="">Select Gender</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-            </select>
-            <input type="date" name="start_date" value="' . esc_attr(date('Y-m-d')) . '" required>
-            <input type="submit" class="button button-primary" value="Assign">
-        </form>';
-
-    echo '<h2>Current Board Members</h2>';
-    echo '<table class="wp-list-table widefat fixed striped">
-            <thead><tr><th>Role</th><th>Name</th><th>Gender</th><th>Start Date</th><th>Action</th></tr></thead><tbody>';
-
-    foreach ($roles as $role_obj) {
-        $role = $role_obj->role_name;
-
-        $assigned = $wpdb->get_results($wpdb->prepare(
-            "SELECT a.id, u.display_name, a.gender, a.start_date 
-             FROM $assignments_table a 
-             JOIN {$wpdb->users} u ON a.user_id = u.ID 
-             WHERE a.role_name = %s AND a.end_date IS NULL", $role));
-
-        if ($assigned) {
-            foreach ($assigned as $entry) {
-                echo '<tr><td>' . esc_html($role) . '</td><td>' . esc_html($entry->display_name) . '</td><td>' . esc_html($entry->gender) . '</td><td>' . esc_html($entry->start_date) . '</td><td><a href="?page=tdwm_board_admin&remove=' . esc_attr($entry->id) . '" onclick="return confirm(\'Remove this assignment?\');">Remove</a></td></tr>';
-            }
-        } else {
-            echo '<tr><td>' . esc_html($role) . '</td><td colspan="4"><strong>Open Position</strong></td></tr>';
-        }
-    }
-
-    echo '</tbody></table></div>';
 }
