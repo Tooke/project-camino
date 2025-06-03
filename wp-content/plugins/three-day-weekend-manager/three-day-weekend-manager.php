@@ -2,13 +2,12 @@
 /*
 Plugin Name: Three-Day Weekend Manager
 Description: Manage board roles, assignments, and weekend settings for three-day communities.
-Version: 1.2
+Version: 1.3.1
 Author: Allen Heishman
 */
 
 if (!defined('ABSPATH')) exit;
 
-// Plugin activation: create required tables
 register_activation_hook(__FILE__, 'tdwm_install');
 function tdwm_install() {
     global $wpdb;
@@ -149,7 +148,7 @@ function tdwm_combined_board_roles_page() {
         foreach ($roles as $role) {
             echo '<tr><td>' . esc_html($role->role_name) . '</td>';
             echo '<td><input type="number" name="sort_order[' . esc_attr($role->id) . ']" value="' . esc_attr($role->sort_order) . '" style="width: 60px;"></td>';
-            echo '<td><button type="submit" name="delete_role" value="' . esc_attr($role->role_name) . '" class="button-link-delete" onclick="return confirm(\'Are you sure you want to delete this role?\');">Remove</button></td></tr>';
+            echo '<td><button type="submit" name="delete_role" value="' . esc_attr($role->role_name) . '" class="button-link-delete" onclick="return confirm(&quot;Are you sure you want to delete this role?&quot;);">Remove</button></td></tr>';
         }
         echo '</tbody></table><p><input type="submit" name="update_order" class="button button-secondary" value="Update Order"></p></form>';
     } else {
@@ -183,14 +182,16 @@ function tdwm_combined_board_roles_page() {
 
     foreach ($roles as $role) {
         $assigned = $wpdb->get_results($wpdb->prepare(
-            "SELECT a.id, u.display_name, a.gender, a.start_date 
+            "SELECT a.id, a.user_id, a.gender, a.start_date 
              FROM $assignments_table a 
-             JOIN {$wpdb->users} u ON a.user_id = u.ID 
              WHERE a.role_name = %s AND a.end_date IS NULL", $role->role_name));
 
         if (!empty($assigned)) {
             foreach ($assigned as $entry) {
-                echo '<tr><td>' . esc_html($role->role_name) . '</td><td>' . esc_html($entry->display_name) . '</td><td>' . esc_html($entry->gender) . '</td><td>' . esc_html($entry->start_date) . '</td><td><a href="?page=tdwm_roles_admin&remove=' . esc_attr($entry->id) . '" onclick="return confirm(\'Remove this assignment?\');">Remove</a></td></tr>';
+                $first = get_user_meta($entry->user_id, 'first_name', true);
+                $last = get_user_meta($entry->user_id, 'last_name', true);
+                $full_name = ($first || $last) ? trim("$first $last") : get_userdata($entry->user_id)->display_name;
+                echo '<tr><td>' . esc_html($role->role_name) . '</td><td>' . esc_html($full_name) . '</td><td>' . esc_html($entry->gender) . '</td><td>' . esc_html($entry->start_date) . '</td><td><a href="?page=tdwm_roles_admin&remove=' . esc_attr($entry->id) . '" onclick="return confirm(&quot;Remove this assignment?&quot;);">Remove</a></td></tr>';
             }
         } else {
             echo '<tr><td>' . esc_html($role->role_name) . '</td><td colspan="4"><strong>Open Position</strong></td></tr>';
@@ -209,12 +210,10 @@ function tdwm_display_public_board_members() {
     $roles = $wpdb->get_results("SELECT role_name FROM $roles_table ORDER BY sort_order ASC, role_name ASC");
 
     $output = '<div class="tdwm-board-members">';
-    $output .= '<table class="wp-list-table widefat fixed striped">';
-    $output .= '<tbody>';
+    $output .= '<table class="wp-list-table widefat fixed striped"><tbody>';
 
     foreach ($roles as $role_obj) {
         $role = $role_obj->role_name;
-
         $assignment = $wpdb->get_row($wpdb->prepare(
             "SELECT u.ID, a.start_date
              FROM $assignments_table a
@@ -225,18 +224,15 @@ function tdwm_display_public_board_members() {
         if ($assignment) {
             $first = get_user_meta($assignment->ID, 'first_name', true);
             $last = get_user_meta($assignment->ID, 'last_name', true);
-            $name = trim("$first $last") ?: get_userdata($assignment->ID)->display_name;
+            $name = ($first || $last) ? trim("$first $last") : get_userdata($assignment->ID)->display_name;
         } else {
             $name = 'Open Position';
         }
 
-        $output .= '<tr>';
-        $output .= '<td>' . esc_html($role) . '</td>';
-        $output .= '<td style="width: 40px;"></td>';
-        $output .= '<td>' . esc_html($name) . '</td>';
-        $output .= '</tr>';
+        $output .= '<tr><td>' . esc_html($role) . '</td><td style="width: 40px;"></td><td>' . esc_html($name) . '</td></tr>';
     }
 
     $output .= '</tbody></table></div>';
     return $output;
 }
+?>
