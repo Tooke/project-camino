@@ -32,3 +32,5 @@ function tdwm_display_public_board_members() {
     $output .= '</tbody></table></div>';
     return $output;
 }
+
+add_shortcode('tdwm_board_members', 'tdwm_display_public_board_members');
