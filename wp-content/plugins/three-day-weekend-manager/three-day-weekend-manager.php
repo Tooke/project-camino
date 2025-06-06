@@ -15,7 +15,6 @@ register_activation_hook(__FILE__, 'tdwm_install');
 function tdwm_install() {
     global $wpdb;
     $charset_collate = $wpdb->get_charset_collate();
-
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
     dbDelta("CREATE TABLE {$wpdb->prefix}tdwm_board_assignments (
@@ -116,7 +115,6 @@ function tdwm_main_page() {
         echo '<div class="notice notice-success is-dismissible"><p>All plugin data deleted successfully.</p></div>';
     }
 
-   
     // ─ Tabs
     echo '<h2 class="nav-tab-wrapper">';
     echo '<a href="?page=tdwm_main_settings&tab=options" class="nav-tab ' . ($tab === 'options' ? 'nav-tab-active' : '') . '">Options</a>';
@@ -128,20 +126,74 @@ function tdwm_main_page() {
         require_once plugin_dir_path(__FILE__) . 'admin/user-fields-tab.php';
         tdwm_render_user_fields_tab();
     } elseif ($tab === 'options') {
-       if (is_super_admin()) {
-        $delete_url = esc_url(admin_url('admin.php?page=tdwm_main_settings&tdwm_delete_data=true'));
-        echo <<<HTML
-        <div style="margin-top:2rem;padding:1rem;border:1px solid red;background:#fff0f0;">
-            <h3 style="color:red;">Danger Zone</h3>
-            <p>This will <strong>delete all plugin data</strong> and reset the plugin to a clean install state. This cannot be undone.</p>
-            <a href="{$delete_url}"
-               onclick="return confirm('Are you sure you want to delete all plugin data?');"
-               style="color:white;background:red;padding:0.5rem 1rem;text-decoration:none;">
-               Delete Plugin Data
-            </a>
-        </div>
+
+        // ─────────────────────────────────────
+        // ▶ 1. Handle create-page logic
+        // ─────────────────────────────────────
+        if (isset($_POST['tdwm_create_board_page']) && current_user_can('manage_options')) {
+            $existing = get_option('tdwm_board_members_page_id');
+
+            if (!$existing || get_post_status($existing) !== 'publish') {
+                // Remove trashed page with slug
+                $trashed = get_page_by_path('board-members', OBJECT, 'page');
+                if ($trashed && $trashed->post_status === 'trash') {
+                    wp_delete_post($trashed->ID, true);
+                }
+
+                // Create new page
+                $page_id = wp_insert_post([
+                    'post_title'   => 'Board Members',
+                    'post_name'    => 'board-members',
+                    'post_content' => '[tdwm_board_members]',
+                    'post_status'  => 'publish',
+                    'post_type'    => 'page',
+                ]);
+
+                if ($page_id && !is_wp_error($page_id)) {
+                    wp_update_post([
+                        'ID'        => $page_id,
+                        'post_name' => 'board-members'
+                    ]);
+
+                    flush_rewrite_rules();
+                    update_option('tdwm_board_members_page_id', $page_id);
+
+                    $link = get_permalink($page_id);
+                    echo '<div class="notice notice-success is-dismissible"><p>Page created: <a href="' . esc_url($link) . '" target="_blank">' . esc_html($link) . '</a></p></div>';
+                } else {
+                    echo '<div class="notice notice-error is-dismissible"><p>Failed to create the Board Members page.</p></div>';
+                }
+            } else {
+                $link = get_permalink($existing);
+                echo '<div class="notice notice-info is-dismissible"><p>Page already exists: <a href="' . esc_url($link) . '" target="_blank">' . esc_html($link) . '</a></p></div>';
+            }
+        }
+
+        // ─────────────────────────────────────
+        // ▶ 2. Output create-page button
+        // ─────────────────────────────────────
+        echo '<h3>Create Board Page</h3>';
+        echo '<form method="post">';
+        echo '<input type="submit" name="tdwm_create_board_page" class="button button-primary" value="Create Board Members Page">';
+        echo '</form>';
+
+        // ─────────────────────────────────────
+        // ▶ 3. Danger Zone
+        // ─────────────────────────────────────
+        if (is_super_admin()) {
+            $delete_url = esc_url(admin_url('admin.php?page=tdwm_main_settings&tdwm_delete_data=true'));
+            echo <<<HTML
+            <div style="margin-top:2rem;padding:1rem;border:1px solid red;background:#fff0f0;">
+                <h3 style="color:red;">Danger Zone</h3>
+                <p>This will <strong>delete all plugin data</strong> and reset the plugin to a clean install state. This cannot be undone.</p>
+                <a href="{$delete_url}"
+                   onclick="return confirm('Are you sure you want to delete all plugin data?');"
+                   style="color:white;background:red;padding:0.5rem 1rem;text-decoration:none;">
+                   Delete Plugin Data
+                </a>
+            </div>
 HTML;
-    }
+        }
     }
 
     echo '</div>';
@@ -211,3 +263,8 @@ function tdwm_update_sort_order() {
 
     wp_send_json_success('Sort order updated');
 }
+
+// ─────────────────────────────────────────
+// ▶ SHORTCODE FOR BOARD MEMBERS PAGE
+// ─────────────────────────────────────────
+require_once plugin_dir_path(__FILE__) . 'public/board-members-shortcode.php';
