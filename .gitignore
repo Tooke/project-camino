@@ -32,3 +32,9 @@ wp-content/themes/*
 # Ignore archive files and backups
 *.gz
 *.zip
+
+
+# Ignore local deployment scripts
+deploy.sh
+deploy-to-kinsta.sh
+deploy-to-production.sh
