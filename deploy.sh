@@ -25,7 +25,7 @@ git push
 # Step 7: Trigger Kinsta Deployment (optional)
 if [ -f "./deploy_to_kinsta.sh" ]; then
   echo "🚀 Running deploy_to_kinsta.sh..."
-  ./deploy_to_kinsta.sh
+  ./deploy-to-kinsta.sh
 else
-  echo "⚠️ deploy_to_kinsta.sh not found. Skipping Kinsta deployment."
+  echo "⚠️ deploy-to-kinsta.sh not found. Skipping Kinsta deployment."
 fi
