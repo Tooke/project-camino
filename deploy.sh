@@ -23,7 +23,7 @@ git commit -m "$commit_message"
 git push
 
 # Step 7: Trigger Kinsta Deployment (optional)
-if [ -f "./deploy_to_kinsta.sh" ]; then
+if [ -f "./deploy-to-kinsta.sh" ]; then
   echo "🚀 Running deploy_to_kinsta.sh..."
   ./deploy-to-kinsta.sh
 else
